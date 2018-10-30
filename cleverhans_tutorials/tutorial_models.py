@@ -60,3 +60,31 @@ def make_basic_picklable_cnn(nb_filters=64, nb_classes=10,
             Softmax()]
   model = MLP(layers, input_shape)
   return model
+
+class ModelBasicMLP(Model):
+  def __init__(self, scope, nb_classes, nb_filters, **kwargs):
+    del kwargs
+    Model.__init__(self, scope, nb_classes, locals())
+    self.nb_filters = nb_filters
+    self.nb_layers = nb_layers
+    self.nb_hidden = nb_hidden
+    # Do a dummy run of fprop to make sure the variables are created from
+    # the start
+    self.fprop(tf.placeholder(tf.float32, [128, 28, 28, 1]))
+    # Put a reference to the params in self so that the params get pickled
+    self.params = self.get_params()
+
+  def fprop(self, x, **kwargs):
+    del kwargs
+    y = tf.flatten(x)
+    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE)
+      for i in range(self.nb_layers):
+        y = tf.layers.dense(y, self.nb_hidden, 
+          kernel_initializer=initializers.HeReLuNormalInitializer)
+        y = tf.nn.relu(y)
+      logits = tf.layers.dense(
+          tf.layers.flatten(y), self.nb_classes,
+          kernel_initializer=initializers.HeReLuNormalInitializer)
+      return {self.O_LOGITS: logits,
+              self.O_PROBS: tf.nn.softmax(logits=logits)}
+
