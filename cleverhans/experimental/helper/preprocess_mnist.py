@@ -25,7 +25,7 @@ def create_data_folder(test_start, test_end, data_folder_path):
 
     for i in range(0, test_end-test_start):
         x_i = x_test[i, :]
-        x_i = np.reshape(x_i.shape[0], -1)
+        x_i = x_i.reshape(np.size(x_i), 1)
         np.save('test-' + str(i) + '.npy', x_i)
     print("Created folder with separate %d files" %(test_end-test_start))
     np.savetxt('all_labels', y_test)

@@ -95,24 +95,30 @@ def create_json(save_path, ckpt_path, nb_layers):
     print("tensor_name: ", key)
     
   layer_info = []
-  for i in range(nb_layers):
+  first_layer_info = {}
+  first_layer_info["weight_var"] = "model2/dense/kernel"
+  first_layer_info["bias_var"] = "model2/dense/bias"
+  first_layer_info["type"] = "ff_relu"
+  first_layer_info["is_transpose"] = True
+  layer_info.append(first_layer_info)
+
+  for i in range(1, nb_layers):
     current_layer_info = {}
-    current_layer_info["weight_var"] = "model2/dense/kernel"
-    current_layer_info["bias_var"] = "model2/dense/bias"
+    current_layer_info["weight_var"] = "model2/dense_" + str(i) + "/kernel"
+    current_layer_info["bias_var"] = "model2/dense_" +str(i) + "/bias"
     current_layer_info["type"] = "ff_relu"
     current_layer_info["is_transpose"] = True
     layer_info.append(current_layer_info)
 
   last_layer_info = {}
-  last_layer_info["weight_var"] = "model2/logits/kernel"
-  last_layer_info["bias_var"] = "model2/logits/bias"
+  last_layer_info["weight_var"] = "model2/dense_" + str(nb_layers) + "/kernel"
+  last_layer_info["bias_var"] = "model2/dense_" + str(nb_layers) + "/bias"
   last_layer_info["type"] = "ff"
-  last_layer_info["is_transpose"] = True
+  last_layer_info["is_transpose"] = False
   layer_info.append(last_layer_info)
 
   with open(os.path.join(save_path, 'description.json'), 'w') as outfile:  
     json.dump(layer_info, outfile)
-  
 
 def main(argv=None):
   from cleverhans_tutorials import check_installation
