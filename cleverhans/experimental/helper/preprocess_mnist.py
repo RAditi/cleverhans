@@ -18,17 +18,22 @@ def create_data_folder(test_start, test_end, data_folder_path):
                   test_start=test_start, test_end=test_end)
     
     x_test, y_test = mnist.get_set('test')
-    
+    np.random.seed(3)
+
+    p = np.random.permutation(10000);
+    x_permutation = x_test[p, :];
+    y_permutation = y_test[p, :];
+
     if not os.path.isdir(data_folder_path):
         os.mkdir(data_folder_path)
     os.chdir(data_folder_path)
 
     for i in range(0, test_end-test_start):
-        x_i = x_test[i, :]
+        x_i = x_permutation[i, :]
         x_i = x_i.reshape(np.size(x_i), 1)
         np.save('test-' + str(i) + '.npy', x_i)
     print("Created folder with separate %d files" %(test_end-test_start))
-    np.savetxt('all_labels', y_test)
+    np.savetxt('all_labels', np.argmax(y_permutation, 1))
 
 def main(argv=None):
   from cleverhans_tutorials import check_installation

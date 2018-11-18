@@ -29,12 +29,12 @@ FLAGS = flags.FLAGS
 BATCH_SIZE = 128
 NB_FILTERS = 64
 NB_LAYERS = 1
-NB_HIDDEN = 100
   
 
-def evaluate_model(save_path, ckpt_path, batch_size, nb_layers, nb_hidden, 
-                  train_start=0, train_end=60000,
-                  test_start=0, test_end=10000):
+def evaluate_model(save_path, ckpt_path, model_name, 
+                   batch_size, nb_layers, nb_hidden, 
+                   train_start=0, train_end=60000,
+                   test_start=0, test_end=10000):
 
   mnist = MNIST(train_start=train_start, train_end=train_end,
                 test_start=test_start, test_end=test_end)
@@ -51,7 +51,7 @@ def evaluate_model(save_path, ckpt_path, batch_size, nb_layers, nb_hidden,
   y = tf.placeholder(tf.float32, shape=(None, nb_classes))
 
   with tf.Session() as sess:
-    model = ModelBasicMLP('model2', nb_classes, nb_layers, nb_hidden)
+    model = ModelBasicMLP(model_name, nb_classes, nb_layers, nb_hidden)
     fgsm = FastGradientMethod(model, sess=sess)
     pgd = ProjectedGradientDescent(model, sess=sess)
     saver = tf.train.Saver()
@@ -87,7 +87,7 @@ def evaluate_model(save_path, ckpt_path, batch_size, nb_layers, nb_hidden,
     np.savetxt(os.path.join(save_path, 'PGD_indices'), np.ravel(pgd_correct_indices).astype(int))
   
 
-def create_json(save_path, ckpt_path, nb_layers):
+def create_json(save_path, ckpt_path, model_name, nb_layers):
   reader = pywrap_tensorflow.NewCheckpointReader(ckpt_path)
   var_to_shape_map = reader.get_variable_to_shape_map()
   
@@ -96,25 +96,25 @@ def create_json(save_path, ckpt_path, nb_layers):
     
   layer_info = []
   first_layer_info = {}
-  first_layer_info["weight_var"] = "model2/dense/kernel"
-  first_layer_info["bias_var"] = "model2/dense/bias"
+  first_layer_info["weight_var"] = model_name + "/dense/kernel"
+  first_layer_info["bias_var"] = model_name + "/dense/bias"
   first_layer_info["type"] = "ff_relu"
   first_layer_info["is_transpose"] = True
   layer_info.append(first_layer_info)
 
   for i in range(1, nb_layers):
     current_layer_info = {}
-    current_layer_info["weight_var"] = "model2/dense_" + str(i) + "/kernel"
-    current_layer_info["bias_var"] = "model2/dense_" +str(i) + "/bias"
+    current_layer_info["weight_var"] = model_name + "/dense_" + str(i) + "/kernel"
+    current_layer_info["bias_var"] = model_name + "/dense_" +str(i) + "/bias"
     current_layer_info["type"] = "ff_relu"
     current_layer_info["is_transpose"] = True
     layer_info.append(current_layer_info)
 
   last_layer_info = {}
-  last_layer_info["weight_var"] = "model2/dense_" + str(nb_layers) + "/kernel"
-  last_layer_info["bias_var"] = "model2/dense_" + str(nb_layers) + "/bias"
+  last_layer_info["weight_var"] = model_name + "/dense_" + str(nb_layers) + "/kernel"
+  last_layer_info["bias_var"] = model_name + "/dense_" + str(nb_layers) + "/bias"
   last_layer_info["type"] = "ff"
-  last_layer_info["is_transpose"] = False
+  last_layer_info["is_transpose"] = True
   layer_info.append(last_layer_info)
 
   with open(os.path.join(save_path, 'description.json'), 'w') as outfile:  
@@ -125,10 +125,11 @@ def main(argv=None):
   check_installation(__file__)
   if not os.path.isdir(FLAGS.save_path):
     os.mkdir(FLAGS.save_path)
-    
-  create_json(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.nb_layers)
-  evaluate_model(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.batch_size, 
-                 FLAGS.nb_layers, FLAGS.nb_hidden)
+
+  hidden_dimensions = [int(item) for item in FLAGS.nb_hidden.split(',')]    
+  create_json(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.model_name, FLAGS.nb_layers)
+  evaluate_model(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.model_name, FLAGS.batch_size, 
+                 FLAGS.nb_layers, hidden_dimensions)
   
 
 if __name__ == '__main__':
@@ -138,9 +139,10 @@ if __name__ == '__main__':
                        'Number of hidden layers')
   flags.DEFINE_integer('batch_size', BATCH_SIZE,
                         'Size of training batches')
-  flags.DEFINE_integer('nb_hidden', NB_HIDDEN,
+  flags.DEFINE_string('nb_hidden', None,
                        'Number of hidden nodes in each layer')
   flags.DEFINE_string('ckpt_path', None, 'Path of checkpoint to restore')
+  flags.DEFINE_string('model_name', None, 'Name of model')
   flags.DEFINE_string('save_path', None, 
                       'Folder to save the json file and attack performance')
 

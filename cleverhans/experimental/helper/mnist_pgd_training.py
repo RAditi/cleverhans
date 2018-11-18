@@ -36,6 +36,7 @@ BACKPROP_THROUGH_ATTACK = False
 NB_FILTERS = 64
 NB_LAYERS = 1
 NB_HIDDEN = 100
+MODEL_INDEX = 0 
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_epochs=NB_EPOCHS, batch_size=BATCH_SIZE,
@@ -45,7 +46,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    backprop_through_attack=BACKPROP_THROUGH_ATTACK,
                    nb_filters=NB_FILTERS, 
                    nb_layers=NB_LAYERS, 
-                   nb_hidden=NB_HIDDEN, 
+                   nb_hidden=NB_HIDDEN,
+                   model_index=MODEL_INDEX, 
                    num_threads=None,
                    label_smoothing=0.1):
   """
@@ -212,7 +214,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
   # Perform and evaluate adversarial training
   train(sess, loss2, x_train, y_train, evaluate=evaluate2,
         args=train_params, rng=rng, var_list=model2.get_params())
-  save_path = saver.save(sess, "models/adv_MLP_"+ str(nb_layers) + "_" + str(nb_hidden) + ".ckpt")
+  save_path = saver.save(sess, "../models/adv_MLP_"+ str(nb_layers) + "_" + str(nb_hidden) + "_v" + str(model_index) + ".ckpt")
   print("Model saved in path: %s" % save_path)
 
   # Calculate training errors
@@ -229,7 +231,8 @@ def main(argv=None):
 
   mnist_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
                  nb_layers=FLAGS.nb_layers, 
-                 nb_hidden=FLAGS.nb_hidden, 
+                 nb_hidden=FLAGS.nb_hidden,
+                 model_index=FLAGS.model_index, 
                  learning_rate=FLAGS.learning_rate,
                  clean_train=FLAGS.clean_train,
                  backprop_through_attack=FLAGS.backprop_through_attack,
@@ -247,6 +250,8 @@ if __name__ == '__main__':
                         'Size of training batches')
   flags.DEFINE_integer('nb_hidden', NB_HIDDEN,
                        'Number of hidden nodes in each layer')
+  flags.DEFINE_integer('model_index', MODEL_INDEX,
+                       'Index of the model to be saved')
   flags.DEFINE_float('learning_rate', LEARNING_RATE,
                      'Learning rate for training')
   flags.DEFINE_bool('clean_train', CLEAN_TRAIN, 'Train on clean examples')
