@@ -9,8 +9,12 @@ import json
 import numpy as np
 import tensorflow as tf
 
+from cleverhans.experimental.certification.utils import conv2ff
 
-def read_weights(checkpoint, model_json):
+CONV2FF = False
+STRIDE = 2
+
+def read_weights(checkpoint, model_json, input_shape=None, CONV2FF=CONV2FF):
   """Function to read the weights from checkpoint based on json description.
 
   Args:
@@ -39,6 +43,7 @@ def read_weights(checkpoint, model_json):
   reader = tf.train.load_checkpoint(checkpoint)
   variable_map = reader.get_variable_to_shape_map()
   checkpoint_variable_names = variable_map.keys()
+
   # Parse JSON file for names
   with tf.gfile.Open(model_json) as f:
     list_model_var = json.load(f)
@@ -53,16 +58,35 @@ def read_weights(checkpoint, model_json):
       raise ValueError('Invalid layer type in description')
     if (layer_model_var['weight_var'] not in checkpoint_variable_names or
         layer_model_var['bias_var'] not in checkpoint_variable_names):
+      print(layer_model_var['weight_var'])
+      print(layer_model_var['bias_var'])
       raise ValueError('Variable names not found in checkpoint')
-    net_layer_types.append(layer_model_var['type'])
+
     layer_weight = reader.get_tensor(layer_model_var['weight_var'])
     layer_bias = reader.get_tensor(layer_model_var['bias_var'])
     # TODO(aditirag): is there a way to automatically check when to transpose
     # We want weights W such that x^{i+1} = W^i x^i + b^i
     # Can think of a hack involving matching shapes but if shapes are equal
     # it can be ambiguous
-    if layer_model_var['is_transpose']:
+    if layer_model_var['type'] in {'ff', 'ff_relu'}:
       layer_weight = np.transpose(layer_weight)
+      
+    print(layer_model_var['type'])
+    if layer_model_var['type'] in {'conv'} and CONV2FF :
+      print("Converting to convolution")
+      print("Current input shape", input_shape)
+      layer_model_var['type'] = 'ff'
+      num_filters = np.shape(layer_weight)[3]
+      layer_weight = conv2ff(input_shape, layer_weight)
+      current_num_rows = int(input_shape[0]/STRIDE)
+      current_num_cols = int(input_shape[1]/STRIDE)
+      input_shape[0] = current_num_rows
+      input_shape[1] = current_num_cols
+      input_shape[2] = num_filters
+      layer_bias = np.tile(np.reshape(layer_bias, [-1, 1]), [current_num_rows*current_num_cols, 1])
+
+    net_layer_types.append(layer_model_var['type'])
     net_weights.append(layer_weight)
-    net_biases.append(np.reshape(layer_bias, (np.size(layer_bias), 1)))
+    net_biases.append(layer_bias)
+    # net_biases.append(np.reshape(layer_bias, (np.size(layer_bias), 1)))
   return net_weights, net_biases, net_layer_types

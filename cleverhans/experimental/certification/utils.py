@@ -4,9 +4,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+
+import os 
+import scipy.io as sio 
 import numpy as np
 import tensorflow as tf
 
+
+flags = tf.app.flags
+FLAGS = flags.FLAGS
 
 def diag(diag_elements):
   """Function to create tensorflow diagonal matrix with input diagonal entries.
@@ -20,77 +26,43 @@ def diag(diag_elements):
   return tf.diag(tf.reshape(diag_elements, [-1]))
 
 
-def initialize_dual(neural_net_params_object, init_dual_file=None,
-                    random_init_variance=0.01, init_nu=200.0):
-  """Function to initialize the dual variables of the class.
 
-  Args:
-    neural_net_params_object: Object with the neural net weights, biases
-      and types
-    init_dual_file: Path to file containing dual variables, if the path
-      is empty, perform random initialization
-      Expects numpy dictionary with
-      lambda_pos_0, lambda_pos_1, ..
-      lambda_neg_0, lambda_neg_1, ..
-      lambda_quad_0, lambda_quad_1, ..
-      lambda_lu_0, lambda_lu_1, ..
-      random_init_variance: variance for random initialization
-    init_nu: Value to initialize nu variable with
-
-  Returns:
-    dual_var: dual variables initialized appropriately.
+def conv2ff(input_shape, layer_weight):
   """
-  lambda_pos = []
-  lambda_neg = []
-  lambda_quad = []
-  lambda_lu = []
+  input_shape: 3 dimensional array of [num_rows, num_cols, num_channels]
+  """
 
-  if init_dual_file is None:
-    for i in range(0, neural_net_params_object.num_hidden_layers + 1):
-      initializer = (np.random.uniform(0, random_init_variance, size=(
-          neural_net_params_object.sizes[i], 1))).astype(np.float32)
-      lambda_pos.append(tf.get_variable('lambda_pos_' + str(i),
-                                        initializer=initializer,
-                                        dtype=tf.float32))
-      initializer = (np.random.uniform(0, random_init_variance, size=(
-          neural_net_params_object.sizes[i], 1))).astype(np.float32)
-      lambda_neg.append(tf.get_variable('lambda_neg_' + str(i),
-                                        initializer=initializer,
-                                        dtype=tf.float32))
-      initializer = (np.random.uniform(0, random_init_variance, size=(
-          neural_net_params_object.sizes[i], 1))).astype(np.float32)
-      lambda_quad.append(tf.get_variable('lambda_quad_' + str(i),
-                                         initializer=initializer,
-                                         dtype=tf.float32))
-      initializer = (np.random.uniform(0, random_init_variance, size=(
-          neural_net_params_object.sizes[i], 1))).astype(np.float32)
-      lambda_lu.append(tf.get_variable('lambda_lu_' + str(i),
-                                       initializer=initializer,
-                                       dtype=tf.float32))
-    nu = tf.get_variable('nu', initializer=init_nu)
-    nu = tf.reshape(nu, shape=(1, 1))
-  else:
-    # Loading from file
-    dual_var_init_val = np.load(init_dual_file).item()
-    for i in range(0, neural_net_params_object.num_hidden_layers + 1):
-      lambda_pos.append(
-          tf.get_variable('lambda_pos_' + str(i),
-                          initializer=dual_var_init_val['lambda_pos'][i],
-                          dtype=tf.float32))
-      lambda_neg.append(
-          tf.get_variable('lambda_neg_' + str(i),
-                          initializer=dual_var_init_val['lambda_neg'][i],
-                          dtype=tf.float32))
-      lambda_quad.append(
-          tf.get_variable('lambda_quad_' + str(i),
-                          initializer=dual_var_init_val['lambda_quad'][i],
-                          dtype=tf.float32))
-      lambda_lu.append(
-          tf.get_variable('lambda_lu_' + str(i),
-                          initializer=dual_var_init_val['lambda_lu'][i],
-                          dtype=tf.float32))
-    nu = tf.get_variable('nu', initializer=1.0*dual_var_init_val['nu'])
-    nu = tf.reshape(nu, shape=(1, 1))
-  dual_var = {'lambda_pos': lambda_pos, 'lambda_neg': lambda_neg,
-              'lambda_quad': lambda_quad, 'lambda_lu': lambda_lu, 'nu': nu}
-  return dual_var
+  input_num_elements = input_shape[0] * input_shape[1] * input_shape[2]
+  kernel = layer_weight
+  
+  # TF graph to compute convolution
+  flattened_input = tf.placeholder(tf.float32, shape=[1, input_num_elements])  # batch size = 1
+  input_image = tf.reshape(flattened_input, [1] + input_shape)
+  output_image = tf.nn.conv2d(input_image, kernel, strides=[1, 2, 2, 1], padding='SAME')
+  flattened_output = tf.reshape(output_image, [1, -1])
+  output_num_elements = int(flattened_output.shape[1])
+
+  # construct the convolutional matrix
+  conv_matrix = np.zeros([output_num_elements, input_num_elements], dtype=np.float32)
+  with tf.Session() as sess:
+    for i in range(input_num_elements):
+      input_vector = np.zeros((1, input_num_elements), dtype=np.float32)
+      input_vector[0, i] = 1.0
+      output_vector = sess.run(flattened_output, feed_dict={flattened_input: input_vector})
+      conv_matrix[:,i] = output_vector.flatten()
+
+  # verify that result is the same
+  random_input = np.random.random((1, input_num_elements))
+  # with tf.gfile.Open(FLAGS.test_input) as f:
+  #   test_input = np.load(f)
+  with tf.Session() as sess:
+    conv_output = sess.run(flattened_output, feed_dict={flattened_input: np.transpose(np.reshape(random_input, [-1, 1]))})
+    matmul_output = np.reshape(np.matmul(conv_matrix, random_input.flatten()), (1, -1))
+
+  print('Absolute difference between outputs: ', np.amax(np.abs(conv_output - matmul_output)))
+  print('Relative difference between outputs: ', np.amax(np.abs(conv_output - matmul_output) / (np.abs(conv_output) + 1e-7)))
+  return conv_matrix 
+
+
+def l1_column(matrix):
+  return tf.reduce_sum(tf.abs(matrix), axis=0)

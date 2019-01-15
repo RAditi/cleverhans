@@ -22,17 +22,17 @@ from cleverhans.utils_tf import model_eval
 from cleverhans.train import train
 from cleverhans.attacks import FastGradientMethod, ProjectedGradientDescent
 from cleverhans.utils import AccuracyReport, set_log_level
-from cleverhans_tutorials.tutorial_models import ModelBasicCNN
+from cleverhans_tutorials.tutorial_models import ModelBasicCNN, ModelSmallCNN, ModelVerySmallCNN
 from cleverhans_tutorials.tutorial_models import ModelBasicMLP
 
 FLAGS = flags.FLAGS
 BATCH_SIZE = 128
-NB_FILTERS = 64
+NB_FILTERS = 16
 NB_LAYERS = 1
   
 
-def evaluate_model(save_path, ckpt_path, model_name, 
-                   batch_size, nb_layers, nb_hidden, 
+def evaluate_model(save_path, ckpt_path, model_type, model_name, 
+                   batch_size, nb_layers, nb_hidden, nb_filters, 
                    train_start=0, train_end=60000,
                    test_start=0, test_end=10000):
 
@@ -40,6 +40,12 @@ def evaluate_model(save_path, ckpt_path, model_name,
                 test_start=test_start, test_end=test_end)
   x_train, y_train = mnist.get_set('train')
   x_test, y_test = mnist.get_set('test')
+
+  np.random.seed(3)
+  
+  p = np.random.permutation(10000);
+  x_test = x_test[p, :];
+  y_test = y_test[p, :];
 
   # Use Image Parameters
   img_rows, img_cols, nchannels = x_train.shape[1:4]
@@ -51,7 +57,13 @@ def evaluate_model(save_path, ckpt_path, model_name,
   y = tf.placeholder(tf.float32, shape=(None, nb_classes))
 
   with tf.Session() as sess:
-    model = ModelBasicMLP(model_name, nb_classes, nb_layers, nb_hidden)
+    if(model_type == 'fc'):
+      model = ModelBasicMLP('model1', nb_classes, nb_layers, nb_hidden)
+    elif (model_type == 'small_cnn'):
+      model = ModelSmallCNN('model1', nb_classes, nb_hidden, nb_filters)
+    elif (model_type == 'very_small_cnn'):
+      model = ModelVerySmallCNN('model2', nb_classes, nb_hidden, nb_filters)
+
     fgsm = FastGradientMethod(model, sess=sess)
     pgd = ProjectedGradientDescent(model, sess=sess)
     saver = tf.train.Saver()
@@ -84,10 +96,14 @@ def evaluate_model(save_path, ckpt_path, model_name,
 
     pgd_acc, pgd_correct_indices  = model_eval(sess, x, y, pgd_preds_adv, x_test, y_test, args=eval_params) 
     print('PGD accuracy: %0.4f' % (pgd_acc))
+    pgd_predictions = sess.run(pgd_preds_adv, feed_dict={x:x_test})
+    test_predictions = sess.run(preds, feed_dict={x:x_test})
+    np.save(os.path.join(save_path, 'PGD_logits'), pgd_predictions.astype(float))
+    np.save(os.path.join(save_path, 'test_logits'), test_predictions.astype(float))
     np.savetxt(os.path.join(save_path, 'PGD_indices'), np.ravel(pgd_correct_indices).astype(int))
-  
+    
 
-def create_json(save_path, ckpt_path, model_name, nb_layers):
+def create_json(save_path, ckpt_path, model_type, model_name , nb_layers=1):
   reader = pywrap_tensorflow.NewCheckpointReader(ckpt_path)
   var_to_shape_map = reader.get_variable_to_shape_map()
   
@@ -95,27 +111,73 @@ def create_json(save_path, ckpt_path, model_name, nb_layers):
     print("tensor_name: ", key)
     
   layer_info = []
-  first_layer_info = {}
-  first_layer_info["weight_var"] = model_name + "/dense/kernel"
-  first_layer_info["bias_var"] = model_name + "/dense/bias"
-  first_layer_info["type"] = "ff_relu"
-  first_layer_info["is_transpose"] = True
-  layer_info.append(first_layer_info)
+  if(model_type=='fc'):
+    first_layer_info = {}
+    first_layer_info["weight_var"] = model_name + "/dense/kernel"
+    first_layer_info["bias_var"] = model_name + "/dense/bias"
+    first_layer_info["type"] = "ff_relu"
+    first_layer_info["is_transpose"] = True
+    layer_info.append(first_layer_info)
 
-  for i in range(1, nb_layers):
-    current_layer_info = {}
-    current_layer_info["weight_var"] = model_name + "/dense_" + str(i) + "/kernel"
-    current_layer_info["bias_var"] = model_name + "/dense_" +str(i) + "/bias"
-    current_layer_info["type"] = "ff_relu"
-    current_layer_info["is_transpose"] = True
-    layer_info.append(current_layer_info)
+    for i in range(1, nb_layers):
+      current_layer_info = {}
+      current_layer_info["weight_var"] = model_name + "/dense_" + str(i) + "/kernel"
+      current_layer_info["bias_var"] = model_name + "/dense_" +str(i) + "/bias"
+      current_layer_info["type"] = "ff_relu"
+      current_layer_info["is_transpose"] = True
+      layer_info.append(current_layer_info)
 
-  last_layer_info = {}
-  last_layer_info["weight_var"] = model_name + "/dense_" + str(nb_layers) + "/kernel"
-  last_layer_info["bias_var"] = model_name + "/dense_" + str(nb_layers) + "/bias"
-  last_layer_info["type"] = "ff"
-  last_layer_info["is_transpose"] = True
-  layer_info.append(last_layer_info)
+    last_layer_info = {}
+    last_layer_info["weight_var"] = model_name + "/dense_" + str(nb_layers) + "/kernel"
+    last_layer_info["bias_var"] = model_name + "/dense_" + str(nb_layers) + "/bias"
+    last_layer_info["type"] = "ff"
+    last_layer_info["is_transpose"] = True
+    layer_info.append(last_layer_info)
+    
+  elif (model_type=='small_cnn'):
+    first_layer_info = {}
+    first_layer_info["weight_var"] = model_name + "/conv2d/kernel"
+    first_layer_info["bias_var"] = model_name + "/conv2d/bias"
+    first_layer_info["type"] = "conv"
+    first_layer_info["is_transpose"] = True
+    layer_info.append(first_layer_info)
+
+    second_layer_info = {}
+    second_layer_info["weight_var"] = model_name + "/conv2d_1/kernel"
+    second_layer_info["bias_var"] = model_name + "/conv2d_1/bias"
+    second_layer_info["type"] = "conv"
+    second_layer_info["is_transpose"] = True
+    layer_info.append(second_layer_info)
+
+    third_layer_info = {}
+    third_layer_info["weight_var"] = model_name + "/dense/kernel"
+    third_layer_info["bias_var"] = model_name + "/dense/bias"
+    third_layer_info["type"] = "ff_relu"
+    third_layer_info["is_transpose"] = True
+    layer_info.append(third_layer_info)
+
+    fourth_layer_info = {}
+    fourth_layer_info["weight_var"] = model_name + "/dense_1/kernel"
+    fourth_layer_info["bias_var"] = model_name + "/dense_1/bias"
+    fourth_layer_info["type"] = "ff"
+    fourth_layer_info["is_transpose"] = True
+    layer_info.append(fourth_layer_info)
+
+  elif (model_type=='very_small_cnn'):
+    first_layer_info = {}
+    first_layer_info["weight_var"] = model_name + "/conv2d/kernel"
+    first_layer_info["bias_var"] = model_name + "/conv2d/bias"
+    first_layer_info["type"] = "conv"
+    first_layer_info["is_transpose"] = True
+    layer_info.append(first_layer_info)
+
+    second_layer_info = {}
+    second_layer_info["weight_var"] = model_name + "/dense/kernel"
+    second_layer_info["bias_var"] = model_name + "/dense/bias"
+    second_layer_info["type"] = "ff"
+    second_layer_info["is_transpose"] = True
+    layer_info.append(second_layer_info)
+
 
   with open(os.path.join(save_path, 'description.json'), 'w') as outfile:  
     json.dump(layer_info, outfile)
@@ -127,9 +189,9 @@ def main(argv=None):
     os.mkdir(FLAGS.save_path)
 
   hidden_dimensions = [int(item) for item in FLAGS.nb_hidden.split(',')]    
-  create_json(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.model_name, FLAGS.nb_layers)
-  evaluate_model(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.model_name, FLAGS.batch_size, 
-                 FLAGS.nb_layers, hidden_dimensions)
+  create_json(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.model_type, FLAGS.model_name, FLAGS.nb_layers)
+  evaluate_model(FLAGS.save_path, FLAGS.ckpt_path, FLAGS.model_type, FLAGS.model_name, FLAGS.batch_size, 
+                 FLAGS.nb_layers, hidden_dimensions, FLAGS.nb_filters)
   
 
 if __name__ == '__main__':
@@ -145,6 +207,8 @@ if __name__ == '__main__':
   flags.DEFINE_string('model_name', None, 'Name of model')
   flags.DEFINE_string('save_path', None, 
                       'Folder to save the json file and attack performance')
+  flags.DEFINE_string('model_type', 'fc', 
+                      'Type of the model being processed')
 
 
   tf.app.run()

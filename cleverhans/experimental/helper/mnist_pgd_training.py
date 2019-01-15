@@ -22,8 +22,7 @@ from cleverhans.utils_tf import model_eval
 from cleverhans.train import train
 from cleverhans.attacks import FastGradientMethod, ProjectedGradientDescent
 from cleverhans.utils import AccuracyReport, set_log_level
-from cleverhans_tutorials.tutorial_models import ModelBasicCNN
-from cleverhans_tutorials.tutorial_models import ModelBasicMLP
+from cleverhans_tutorials.tutorial_models import ModelBasicCNN, ModelBasicMLP, ModelVerySmallCNN
 
 FLAGS = flags.FLAGS
 
@@ -37,6 +36,7 @@ NB_FILTERS = 64
 NB_LAYERS = 1
 NB_HIDDEN = 100
 MODEL_INDEX = 0 
+EPS_ITER = 0.1
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_epochs=NB_EPOCHS, batch_size=BATCH_SIZE,
@@ -116,7 +116,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
   }
   pgd_params = {
       'eps':0.3,
-      'eps_iter': 0.1, 
+      'eps_iter': FLAGS.eps_iter, 
       'nb_iter': 40, 
       'clip_min':0.,
       'clip_max':1.
@@ -135,8 +135,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     if report_text:
       print('Test accuracy on %s examples: %0.4f' % (report_text, acc))
 
-  if clean_train:
-    model = ModelBasicMLP('model1', nb_classes, nb_layers, nb_hidden)
+  if clean_train and False:
+    model = ModelVerySmallCNN('model1', nb_classes, nb_hidden, nb_filters)
     preds = model.get_logits(x)
     loss = CrossEntropy(model, smoothing=label_smoothing)
 
@@ -172,7 +172,7 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     print('Repeating the process, using adversarial training for %d layers and %d nodes' %(nb_layers, nb_hidden))
 
   # Create a new model and train it to be robust to FastGradientMethod
-  model2 = ModelBasicMLP('model2', nb_classes, nb_layers, nb_hidden)
+  model2 = ModelVerySmallCNN('model2', nb_classes, nb_hidden, nb_filters)
   fgsm2 = FastGradientMethod(model2, sess=sess)
   pgd2 = ProjectedGradientDescent(model2, sess=sess)
   fgsm_adv_x = fgsm2.generate(x, **fgsm_params)
@@ -214,7 +214,8 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
   # Perform and evaluate adversarial training
   train(sess, loss2, x_train, y_train, evaluate=evaluate2,
         args=train_params, rng=rng, var_list=model2.get_params())
-  save_path = saver.save(sess, "../models/adv_MLP_"+ str(nb_layers) + "_" + str(nb_hidden) + "_v" + str(model_index) + ".ckpt")
+  # save_path = saver.save(sess, "../models/adv_MLP_"+ str(nb_layers) + "_" + str(nb_hidden) + "_v" + str(model_index) + ".ckpt")
+  save_path = saver.save(sess, FLAGS.save_path)
   print("Model saved in path: %s" % save_path)
 
   # Calculate training errors
@@ -254,10 +255,13 @@ if __name__ == '__main__':
                        'Index of the model to be saved')
   flags.DEFINE_float('learning_rate', LEARNING_RATE,
                      'Learning rate for training')
+  flags.DEFINE_float('eps_iter', EPS_ITER,
+                     'Epsilon for iteration')
   flags.DEFINE_bool('clean_train', CLEAN_TRAIN, 'Train on clean examples')
   flags.DEFINE_bool('backprop_through_attack', BACKPROP_THROUGH_ATTACK,
                     ('If True, backprop through adversarial example '
                      'construction process during adversarial training'))
+  flags.DEFINE_string('save_path', None, 'Path to save checkpoint')
 
 
   tf.app.run()
