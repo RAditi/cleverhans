@@ -348,14 +348,14 @@ class Optimization(object):
     lambda_feed_dict.update({lambda_placeholder:value for lambda_placeholder, value in zip(self.pdualff_object.lambda_quad, 
                                                                                            projected_lambda_quad)})
     lambda_feed_dict.update({lambda_placeholder:value for lambda_placeholder, value in zip(self.pdualff_object.lambda_lu, 
-                                                                                           projected_lambda_lu)})    
+                                                                                           projected_lambda_lu)})
     lambda_feed_dict.update({self.pdualff_object.nu: projected_nu})
     old_vector_g = self.sess.run(self.pdualff_object.vector_g, lambda_feed_dict)
     old_matrix_h = self.sess.run(self.pdualff_object.matrix_h, lambda_feed_dict)
     old_scalar_f = self.sess.run(self.pdualff_object.scalar_f, lambda_feed_dict)
     old_matrix_m = self.sess.run(self.pdualff_object.matrix_m, lambda_feed_dict)
     np.save('old_matrix_m_5', old_matrix_m)
-    exit()
+    
     # min_eig_val_h, min_eig_vec_h = eigs(old_matrix_h, k=1, which='SR',tol=1E-6)
     small = 0 
     large = 0.1
@@ -581,7 +581,7 @@ class Optimization(object):
      found_cert: True is negative certificate is found, False otherwise
     """
     # Project onto feasible set of dual variables
-    if self.current_step % self.params['projection_steps'] == 0 :
+    if self.current_step % self.params['projection_steps'] == 0 and False :
       # self.sess.run(self.proj_step)
       list_slacks = [0]
       # valid_certificates = [self.project_dual_ff(slack) for slack in list_slacks]

@@ -267,7 +267,7 @@ class DualFormulation(object):
                           dtype=tf.float32))
       nu = tf.get_variable('nu', initializer=1.0*init_nu)
       self.nu = tf.reshape(nu, shape=(1, 1))
-      self.dual_var = {'lambda_pos': self.lambda_pos, 'lambda_neg': self.lambda_neg,
+    self.dual_var = {'lambda_pos': self.lambda_pos, 'lambda_neg': self.lambda_neg,
               'lambda_quad': self.lambda_quad, 'lambda_lu': self.lambda_lu, 'nu': self.nu}
 
 
