@@ -13,7 +13,7 @@ from cleverhans.dataset import MNIST
 from cleverhans.utils_tf import model_eval
 from cleverhans.utils import AccuracyReport, set_log_level
 from cleverhans.attacks import FastGradientMethod, ProjectedGradientDescent
-from cleverhans_tutorials.tutorial_models import ModelBasicMLP, ModelSmallCNN
+from cleverhans_tutorials.tutorial_models import ModelBasicMLP, ModelSmallCNNb
 
 FLAGS = flags.FLAGS
 NB_LAYERS = 1 
