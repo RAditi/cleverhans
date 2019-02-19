@@ -193,7 +193,7 @@ def train(sess, loss, x, y, X_train, Y_train, save=False,
   return True
 
 
-def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
+def model_eval(sess, x, y, predictions, X_test=None, Y_test=None, 
                feed=None, args=None):
   """
   Compute the accuracy of a TF model on some data
@@ -207,12 +207,15 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
            dictionary before the session runs. Can be used to feed
            the learning phase of a Keras model for instance.
   :param args: dict or argparse `Namespace` object.
-               Should contain `batch_size`
+               Should contain `batch_size` and optionally 'is_correct_indices'
   :return: a float with the accuracy value
   """
   args = _ArgsWrapper(args or {})
 
   assert args.batch_size, "Batch size was not given in args dict"
+  if args.is_correct_indices == None:
+    args.is_correct_indices = False
+
   if X_test is None or Y_test is None:
     raise ValueError("X_test argument and Y_test argument "
                      "must be supplied.")
@@ -228,7 +231,7 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
 
   # Init result var
   accuracy = 0.0
-
+  correct_indices = []
   with sess.as_default():
     # Compute number of batches
     nb_batches = int(math.ceil(float(len(X_test)) / args.batch_size))
@@ -257,16 +260,16 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
       if feed is not None:
         feed_dict.update(feed)
       cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
-
       accuracy += cur_corr_preds[:cur_batch_size].sum()
-
+      correct_indices = correct_indices + np.add(start, np.ravel(np.where(cur_corr_preds[:cur_batch_size] == 1))).tolist()
     assert end >= len(X_test)
 
     # Divide by number of examples to get final value
     accuracy /= len(X_test)
-
-  return accuracy
-
+  
+  if not args.is_correct_indices:  
+    return accuracy   
+  return accuracy, correct_indices
 
 def tf_model_load(sess, file_path=None):
   """
