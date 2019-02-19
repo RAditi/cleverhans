@@ -62,24 +62,23 @@ def make_basic_picklable_cnn(nb_filters=64, nb_classes=10,
   return model
 
 class ModelBasicMLP(Model):
-  def __init__(self, scope, nb_classes, nb_filters, **kwargs):
+  def __init__(self, scope, input_shape, nb_classes, nb_layers, nb_hidden, **kwargs):
     del kwargs
     Model.__init__(self, scope, nb_classes, locals())
-    self.nb_filters = nb_filters
     self.nb_layers = nb_layers
     self.nb_hidden = nb_hidden
     # Do a dummy run of fprop to make sure the variables are created from
     # the start
-    self.fprop(tf.placeholder(tf.float32, [128, 28, 28, 1]))
+    self.fprop(tf.placeholder(tf.float32, shape=[128] + input_shape))
     # Put a reference to the params in self so that the params get pickled
     self.params = self.get_params()
 
   def fprop(self, x, **kwargs):
     del kwargs
-    y = tf.flatten(x)
-    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE)
+    y = tf.layers.flatten(x)
+    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
       for i in range(self.nb_layers):
-        y = tf.layers.dense(y, self.nb_hidden, 
+        y = tf.layers.dense(y, self.nb_hidden[i], 
           kernel_initializer=initializers.HeReLuNormalInitializer)
         y = tf.nn.relu(y)
       logits = tf.layers.dense(
@@ -88,3 +87,65 @@ class ModelBasicMLP(Model):
       return {self.O_LOGITS: logits,
               self.O_PROBS: tf.nn.softmax(logits=logits)}
 
+
+class ModelSmallCNN(Model):
+  def __init__(self, scope, nb_classes, nb_hidden, nb_filters, **kwargs):
+    del kwargs
+    Model.__init__(self, scope, nb_classes, locals())
+    self.nb_filters = nb_filters
+    self.nb_hidden = nb_hidden 
+    # do a dummy run of fprop to make sure the variables are created from 
+    # the start 
+    self.fprop(tf.placeholder(tf.float32, [128, 28, 28, 1]))
+    # Put a reference to the params in self so that the params get pickled
+    self.params = self.get_params()
+
+  def fprop(self, x, **kwargs):
+    my_conv = functools.partial(
+        tf.layers.conv2d, activation=tf.nn.relu,
+        kernel_initializer=initializers.HeReLuNormalInitializer)
+    del kwargs
+    
+    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+    
+      # y = tf.pad(x, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+      y = my_conv(x, self.nb_filters, 4, strides=[2,2], padding='same')
+      # y = tf.pad(y, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+      y = my_conv(y, 2*self.nb_filters, 4, strides=[2,2], padding='same')
+      # y = tf.transpose(y, perm=[0, 3, 1, 2])
+      y = tf.layers.dense(tf.layers.flatten(y), self.nb_hidden[0], 
+                          kernel_initializer=initializers.HeReLuNormalInitializer)
+      y = tf.nn.relu(y)
+      logits = tf.layers.dense(
+          tf.layers.flatten(y), self.nb_classes,
+          kernel_initializer=initializers.HeReLuNormalInitializer)
+      return {self.O_LOGITS: logits,
+              self.O_PROBS: tf.nn.softmax(logits=logits)}
+
+class ModelVerySmallCNN(Model):
+  def __init__(self, scope, nb_classes, nb_hidden, nb_filters, **kwargs):
+    del kwargs
+    Model.__init__(self, scope, nb_classes, locals())
+    self.nb_filters = nb_filters
+    self.nb_hidden = nb_hidden 
+    # do a dummy run of fprop to make sure the variables are created from 
+    # the start 
+    self.fprop(tf.placeholder(tf.float32, [128, 28, 28, 1]))
+    # Put a reference to the params in self so that the params get pickled
+    self.params = self.get_params()
+
+  def fprop(self, x, **kwargs):
+    my_conv = functools.partial(
+        tf.layers.conv2d, activation=tf.nn.relu,
+        kernel_initializer=initializers.HeReLuNormalInitializer)
+    del kwargs
+    
+    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+    
+      # y = tf.pad(x, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+      y = my_conv(x, self.nb_filters, 4, strides=[2,2], padding='same')
+      logits = tf.layers.dense(
+          tf.layers.flatten(y), self.nb_classes,
+          kernel_initializer=initializers.HeReLuNormalInitializer)
+      return {self.O_LOGITS: logits,
+              self.O_PROBS: tf.nn.softmax(logits=logits)}
