@@ -17,9 +17,9 @@ from cleverhans.attacks import FastGradientMethod, ProjectedGradientDescent
 from cleverhans.augmentation import random_horizontal_flip, random_shift
 from cleverhans.compat import flags
 from cleverhans.dataset import CIFAR10
-from cleverhans.loss import CrossEntropy
+from cleverhans.loss import CrossEntropy, WeightedSum
 from cleverhans.model_zoo.all_convolutional import ModelAllConvolutional
-from cleverhans.model_zoo.madry
+from cleverhans.model_zoo.madry_lab_challenges.cifar10_model import make_wresnet
 from cleverhans.train import train
 from cleverhans.utils import AccuracyReport, set_log_level
 from cleverhans.utils_tf import model_eval
@@ -32,7 +32,9 @@ LEARNING_RATE = 0.001
 CLEAN_TRAIN = True
 BACKPROP_THROUGH_ATTACK = False
 NB_FILTERS = 64
-
+EPS = 0.01
+NB_GD_ITER = 15
+EPS_ITER = 10
 
 def cifar10_adv_train(train_start=0, train_end=60000, test_start=0,
                      test_end=10000, nb_epochs=NB_EPOCHS, batch_size=BATCH_SIZE,
@@ -118,6 +120,7 @@ def cifar10_adv_train(train_start=0, train_end=60000, test_start=0,
       report_text = 'legitimate'
     if report_text:
       print('Test accuracy on %s examples: %0.4f' % (report_text, acc))
+    return acc
 
   # Create a new model and train it to be robust to PGD 
   model = make_wresnet(nb_classes=10, input_shape=(None, 32, 32, 3), scope=None)
@@ -128,39 +131,55 @@ def cifar10_adv_train(train_start=0, train_end=60000, test_start=0,
   pgd_preds = model.get_logits(pgd_x)
 
   def attack(x):
-    return fgsm2.generate(x, **fgsm_params)
+    return pgd.generate(x, **fgsm_params)
 
-  loss2 = CrossEntropy(model2, smoothing=label_smoothing, attack=attack)
-  preds2 = model2.get_logits(x)
-  adv_x2 = attack(x)
+  adv_loss = CrossEntropy(model, smoothing=label_smoothing, attack=attack)
+  clean_loss = CrossEntropy(model, smoothing=label_smoothing)
+  final_loss = WeightedSum(model, [FLAGS.clean_weight, clean_loss], [FLAGS.adv_weight, adv_loss])
+  
+  preds = model.get_logits(x)
+  adv_x = attack(x)
+  adv_x = tf.stop_gradient(adv_x)
+  preds_adv = model.get_logits(adv_x)
 
-  if not backprop_through_attack:
-    # For the fgsm attack used in this tutorial, the attack has zero
-    # gradient so enabling this flag does not change the gradient.
-    # For some other attacks, enabling this flag increases the cost of
-    # training, but gives the defender the ability to anticipate how
-    # the atacker will change their strategy in response to updates to
-    # the defender's parameters.
-    adv_x2 = tf.stop_gradient(adv_x2)
-  preds2_adv = model2.get_logits(adv_x2)
+  model_dir = FLAGS.model_dir 
+  if not os.path.exists(model_dir):
+      os.makedires(model_dir)
 
-  def evaluate2():
+  saver = tf.train.Saver(max_to_keep=3)
+  summary_writer = tf.summary.FileWriter(model_dir, sess.graph)
+
+
+  def evaluate():
     # Accuracy of adversarially trained model on legitimate test inputs
-    do_eval(preds2, x_test, y_test, 'adv_train_clean_eval', False)
+    test_clean_accuracy = do_eval(preds, x_test, y_test, 'test_clean_eval', False)
     # Accuracy of the adversarially trained model on adversarial examples
-    do_eval(preds2_adv, x_test, y_test, 'adv_train_adv_eval', True)
+    test_adv_accuracy = do_eval(preds_adv, x_test, y_test, 'test_adv_eval', True)
+    # Accuracy on train clean 
+    train_clean_accuracy = do_eval(preds, x_train, y_train, 'train_clean_eval')
+    # Accuracy on train adv 
+    train_adv_accuracy = do_eval(preds_adv, x_train, y_train, 'train_adv_eval')
+
+    summary = tf.Summary(value=[
+          tf.Summary.Value(tag='loss train', simple_value= average_train_loss),
+          tf.Summary.Value(tag='loss test', simple_value= average_test_loss),
+          tf.Summary.Value(tag='loss adv train', simple_value= average_adv_train_loss),
+          tf.Summary.Value(tag='loss adv test', simple_value= average_adv_test_loss),
+          tf.Summary.Value(tag='accuracy train', simple_value= train_accuracy),
+          tf.Summary.Value(tag='accuracy adv train', simple_value= adv_train_accuracy),
+          tf.Summary.Value(tag='accuracy adv test', simple_value= adv_test_accuracy),
+          tf.Summary.Value(tag='accuracy test', simple_value= test_accuracy)])
+      summary_writer.add_summary(summary, global_step.eval(sess))
+
+
 
   # Perform and evaluate adversarial training
-  train(sess, loss2, None, None,
+  train(sess, final_loss, None, None,
         dataset_train=dataset_train, dataset_size=dataset_size,
-        evaluate=evaluate2, args=train_params, rng=rng,
-        var_list=model2.get_params())
+        evaluate=evaluate, args=train_params, rng=rng,
+        var_list=model.get_params())
 
-  # Calculate training errors
-  if testing:
-    do_eval(preds2, x_train, y_train, 'train_adv_train_clean_eval')
-    do_eval(preds2_adv, x_train, y_train, 'train_adv_train_adv_eval')
-
+    
   return report
 
 
@@ -169,10 +188,7 @@ def main(argv=None):
   check_installation(__file__)
 
   cifar10_tutorial(nb_epochs=FLAGS.nb_epochs, batch_size=FLAGS.batch_size,
-                   learning_rate=FLAGS.learning_rate,
-                   clean_train=FLAGS.clean_train,
-                   backprop_through_attack=FLAGS.backprop_through_attack,
-                   nb_filters=FLAGS.nb_filters)
+                   learning_rate=FLAGS.learning_rate)
 
 
 if __name__ == '__main__':
@@ -188,5 +204,13 @@ if __name__ == '__main__':
   flags.DEFINE_bool('backprop_through_attack', BACKPROP_THROUGH_ATTACK,
                     ('If True, backprop through adversarial example '
                      'construction process during adversarial training'))
+  flags.DEFINE_float('eps', EPS,
+                       'Size of perturbation')
+  flags.DEFINE_float('eps_iter', EPS_ITER,
+                       'Size of perturbation at each step')
+  flags.DEFINE_integer('nb_gd_iter', NB_GD_ITER,
+                       'Number of gradient descent iterations')
+
+  
 
   tf.app.run()
