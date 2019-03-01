@@ -151,16 +151,18 @@ def train(sess, loss, x_train, y_train,
 
       loss_value = loss.fprop(x, y, **fprop_args)
 
-      # grads.append(optimizer.compute_gradients(
-      #     loss_value, var_list=var_list))
+      grads.append(optimizer.compute_gradients(
+          loss_value, var_list=var_list))
+
   num_devices = len(devices)
   print("num_devices: ", num_devices)
 
   grad = avg_grads(grads)
   # Trigger update operations within the default graph (such as batch_norm).
   with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-    # train_step = optimizer.apply_gradients(grad)
-    train_step = optimizer.minimize(loss_value)
+    train_step = optimizer.apply_gradients(grad)
+    # Might want to not update for "clean" examples
+    # train_step = optimizer.minimize(loss_value)
     
     
   epoch_tf = tf.placeholder(tf.int32, [])

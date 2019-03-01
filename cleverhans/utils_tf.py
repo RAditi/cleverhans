@@ -192,7 +192,7 @@ def train(sess, loss, x, y, X_train, Y_train, save=False,
   return True
 
 
-def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
+def model_eval(sess, x, y, predictions, loss=None, X_test=None, Y_test=None,
                feed=None, args=None):
   """
   Compute the accuracy of a TF model on some data
@@ -228,7 +228,10 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
 
   # Init result var
   accuracy = 0.0
-
+  total_loss = 0.0
+  if loss is not None:
+    loss_value = loss.fprop(x, y)
+    
   with sess.as_default():
     # Compute number of batches
     nb_batches = int(math.ceil(float(len(X_test)) / args.batch_size))
@@ -257,18 +260,20 @@ def model_eval(sess, x, y, predictions, X_test=None, Y_test=None,
       if feed is not None:
         feed_dict.update(feed)
       cur_corr_preds = correct_preds.eval(feed_dict=feed_dict)
-
       accuracy += cur_corr_preds[:cur_batch_size].sum()
+      if loss is not None:
+        cur_loss = loss_value.eval(feed_dict=feed_dict)
+        total_loss += cur_loss
+      
 
     assert end >= len(X_test)
 
     # Divide by number of examples to get final value
     accuracy /= len(X_test)
-
-  return accuracy
+    average_loss = total_loss / len(X_test)
+  return accuracy, average_loss
 
 _model_eval_cache = {}
-
 
 def tf_model_load(sess, file_path=None):
   """
