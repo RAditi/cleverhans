@@ -77,6 +77,9 @@ flags.DEFINE_enum('verbosity', 'DEBUG',
                   'Logging verbosity level.')
 flags.DEFINE_string('eig_type', 'TF_GD', 
                   'One of TF_EIG, TF_GD, SCIPY_FF, SCIPY_CONV')
+flags.DEFINE_integer('num_adam_steps', 10,
+                     'Total number of adam steps')
+
 
 dataset = 'MNIST'
 

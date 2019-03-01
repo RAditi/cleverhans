@@ -122,9 +122,13 @@ class Optimization(object):
     if FLAGS.eig_type == 'SCIPY_FF':
       self.dual_object.get_full_psd_matrix()
       matrix_m = self.sess.run(self.dual_object.matrix_m)
-      min_eig_vec_val, estimated_eigen_vector = eigs(matrix_m, k=1, which='SR', 
-        tol=1E-4, sigma=eig_val_estimate)
-      return np.reshape(estimated_eigen_vector, [-1, 1]), min_eig_vec_val
+      if(eig_val_estimate is None):
+        min_eig_val, estimated_eigen_vector = eigs(matrix_m, k=1, which='SR', 
+                                                       tol=1E-4)
+      else:
+        min_eig_val, estimated_eigen_vector = eigs(matrix_m, k=1, which='LR', 
+                                                       tol=1E-4, sigma=2*eig_val_estimate)
+      return np.reshape(estimated_eigen_vector, [-1, 1]), min_eig_val
 
     elif FLAGS.eig_type == 'SCIPY_CONV':
       dim = self.dual_object.matrix_m_dimension
@@ -135,15 +139,19 @@ class Optimization(object):
         np_vector = np.reshape(np_vector, [-1, 1])
         output_np_vector = self.sess.run(output_vector, feed_dict={input_vector:np_vector})
         return output_np_vector
+
       linear_operator = LinearOperator((dim, dim), matvec=np_vector_prod_fn)
       # Performing shift invert scipy operation when eig val estimate is available
       if(eig_val_estimate):
-        min_eig_vec_val, estimated_eigen_vector = eigs(linear_operator, 
-          k=1, tol=1E-4, sigma=eig_val_estimate)
+        start = time.time()
+        min_eig_val, estimated_eigen_vector = eigs(linear_operator, which = 'LR', 
+                                                       k=1, tol=1E-2, sigma=2*eig_val_estimate)
+        end = time.time()
+        print("Scipy time:", end - start)
       else:
-        min_eig_vec_val, estimated_eigen_vector = eigs(linear_operator, 
+        min_eig_val, estimated_eigen_vector = eigs(linear_operator, 
           k=1, which='SR', tol=1E-4)
-      return np.reshape(estimated_eigen_vector, [-1, 1]), min_eig_vec_val
+      return np.reshape(estimated_eigen_vector, [-1, 1]), min_eig_val
 
     else:      
       [current_lambda_pos, current_lambda_neg, current_lambda_quad, 
@@ -173,9 +181,6 @@ class Optimization(object):
                                                    tol=1E-4)
       return np.reshape(estimated_eigen_vector, [-1, 1]), np.real(min_eig_val)
 
-
-
-
   def prepare_one_step(self):
     """Create tensorflow op for running one step of descent."""
     # Create the objective
@@ -198,6 +203,14 @@ class Optimization(object):
                             0.5*(tf.square(
                                 tf.maximum(-1*self.penalty_placeholder*
                                            self.eig_val_estimate, 0))))
+    # self.total_objective = 0.5*(tf.square(
+    #   tf.maximum(-1*self.penalty_placeholder*
+    #              self.eig_val_estimate, 0)))
+
+    # self.total_objective = (self.dual_object.unconstrained_objective + 
+    #                         tf.maximum(-1*self.penalty_placeholder*self.eig_val_estimate, 0))
+
+
     global_step = tf.Variable(0, trainable=False)
     # Set up learning rate as a placeholder
     self.learning_rate = tf.placeholder(tf.float32, shape=[])
@@ -217,10 +230,24 @@ class Optimization(object):
       self.optimizer = tf.train.GradientDescentOptimizer(
           learning_rate=self.learning_rate)
 
+
+    # Adam optimizer 
+    self.adam_optimizer = tf.train.AdamOptimizer(
+      learning_rate=self.learning_rate)
+    # Adagrad optimizer 
+    self.adagrad_optimizer = tf.train.AdagradOptimizer(
+      learning_rate=self.learning_rate)
+
     # Write out the projection step
     self.train_step = self.optimizer.minimize(self.total_objective,
                                               global_step=global_step)
+    self.adam_train_step = self.adam_optimizer.minimize(self.total_objective,
+                                              global_step=global_step)
+    self.adagrad_train_step = self.adagrad_optimizer.minimize(self.total_objective,
+                                              global_step=global_step)
+
     
+    self.current_eig_val_estimate = -0.1
     # Initialize dual variables 
     self.sess.run(tf.global_variables_initializer())
 
@@ -253,10 +280,10 @@ class Optimization(object):
     if(self.params['stats_folder'] is not None and
        not tf.gfile.IsDirectory(self.params['stats_folder'])):
       tf.gfile.MkDir(self.params['stats_folder'])
-    self.current_scipy_eig_val = None
+    self.current_scipy_eig_val = -0.1
 
   def run_one_step(self, eig_init_vec_val, eig_num_iter_val,
-                   smooth_val, penalty_val, learning_rate_val):
+                   smooth_val, penalty_val, learning_rate_val, opt=None):
     """Run one step of gradient descent for optimization.
 
     Args:
@@ -292,19 +319,16 @@ class Optimization(object):
      # Have to feed eig vec estimate if scipy eig computations 
     if FLAGS.eig_type == 'SCIPY_CONV' or FLAGS.eig_type == 'SCIPY_FF':
       self.current_eig_vector, self.current_eig_val_estimate = self.get_scipy_eig_vec(self.current_eig_val_estimate)
-      step_feed_dict.update({self.eig_vec_estimate:current_eig_vector})
+      step_feed_dict.update({self.eig_vec_estimate:self.current_eig_vector})
 
-    self.sess.run(self.train_step, feed_dict=step_feed_dict)
-    [_, self.current_eig_vec_val, 
-     self.current_eig_val_estimate] = self.sess.run([self.proj_step, 
-                                                     self.eig_vec_estimate, 
+
+    [self.current_eig_vec_val, 
+     self.current_eig_val_estimate] = self.sess.run([self.eig_vec_estimate, 
                                                    self.eig_val_estimate], 
                                                    feed_dict=step_feed_dict)
-
     if self.current_step % self.params['print_stats_steps'] == 0:
       [self.current_total_objective, self.current_unconstrained_objective,
-       self.current_eig_vec_val,
-       self.current_eig_val_estimate,
+       _, _, 
        self.current_nu] = self.sess.run(
          [self.total_objective,
           self.dual_object.unconstrained_objective,
@@ -312,14 +336,15 @@ class Optimization(object):
           self.eig_val_estimate,
           self.dual_object.nu], feed_dict=step_feed_dict)
       start = time.time()
-      # To reset the scipy_eig value estimate in case it has diverged
-      if(not self.current_scipy_eig_val or self.current_step%1000 == 0):
-        print("Computing full scipy value")
-        self.current_eig_vec_val, self.current_scipy_eig_val = self.get_scipy_eig_vec(None)
-      else:
-        self.current_eig_vec_val, self.current_scipy_eig_val = self.get_scipy_eig_vec(self.current_scipy_eig_val - 0.1)
+      # # To reset the scipy_eig value estimate in case it has diverged
+      # if(not self.current_scipy_eig_val or self.current_step%1000 == 0):
+      #   print("Computing full scipy value")
+      #   self.current_eig_vec_val, self.current_scipy_eig_val = self.get_scipy_eig_vec(None)
+      # else:
+      #   self.current_eig_vec_val, self.current_scipy_eig_val = self.get_scipy_eig_vec(self.current_eig_val_estimate)
+      self.current_scipy_eig_val = self.current_eig_val_estimate
       end = time.time()
-      print('Scipy time', end - start)
+      # print('Scipy time', end - start)
       stats = {'total_objective': float(self.current_total_objective),
                'unconstrained_objective': float(self.current_unconstrained_objective),
                'min_eig_val_estimate': float(self.current_eig_val_estimate),
@@ -335,6 +360,16 @@ class Optimization(object):
           file_f.write(stats)
         self.dual_object.save_dual(self.params['stats_folder'] + '/' + 
                                   str(self.current_outer_step), self.sess)
+    if(opt=='adam'):
+      print("Adam")
+      self.sess.run(self.adam_train_step, feed_dict=step_feed_dict)
+    elif(opt=='adagrad'):
+      print("Adagrad")
+      self.sess.run(self.adagrad_train_step, feed_dict=step_feed_dict)
+    else:
+      self.sess.run(self.train_step, feed_dict=step_feed_dict)
+    self.sess.run(self.proj_step, feed_dict=step_feed_dict)
+
     return False
 
   def run_optimization(self):
@@ -365,16 +400,26 @@ class Optimization(object):
           self.params['large_eig_num_steps'],
           smooth_val,
           penalty_val, 
-          learning_rate_val)
+          learning_rate_val, 
+        'adam')
       if found_cert:
         return True
       while self.current_step < self.params['inner_num_steps']:
         self.current_step = self.current_step + 1
-        found_cert = self.run_one_step(self.current_eig_vec_val,
-                                       self.params['small_eig_num_steps'],
-                                       smooth_val,
-                                       penalty_val, 
-                                       learning_rate_val)
+        if(self.current_step < FLAGS.num_adam_steps):
+          found_cert = self.run_one_step(self.current_eig_vec_val,
+                                         self.params['small_eig_num_steps'],
+                                         smooth_val,
+                                         penalty_val, 
+                                         learning_rate_val, 
+                                         'adam')
+        else:
+          found_cert = self.run_one_step(self.current_eig_vec_val,
+                                         self.params['small_eig_num_steps'],
+                                         smooth_val,
+                                         penalty_val, 
+                                         learning_rate_val, 
+                                         'adagrad')
         if found_cert:
           return -1
       # Update penalty only if it looks like current objective is optimizes

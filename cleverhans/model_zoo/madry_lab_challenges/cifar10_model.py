@@ -14,7 +14,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from cleverhans.serial import NoRefModel
-
+from cleverhans.model import Model
 
 class Layer(object):
 
@@ -210,10 +210,9 @@ class Linear(Layer):
     with tf.variable_scope('logit', reuse=tf.AUTO_REUSE):
       w = tf.get_variable(
           'DW', [self.dim, self.num_hid],
-          initializer=tf.initializers.variance_scaling(
-              distribution='uniform'))
+          initializer = tf.uniform_unit_scaling_initializer(factor=1.0))
       b = tf.get_variable('biases', [self.num_hid],
-                               initializer=tf.initializers.constant())
+                               initializer=tf.constant_initializer())
     return w, b
 
   def fprop(self, x):
@@ -269,7 +268,7 @@ def _residual(x, in_filter, out_filter, stride,
   return x
 
 
-def _decay():
+def decay():
   """L2 weight decay loss."""
   costs = []
   for var in tf.trainable_variables():
@@ -335,6 +334,5 @@ def make_wresnet(nb_classes=10, input_shape=(None, 32, 32, 3), scope=None):
             Flatten(),
             Linear(nb_classes),
             Softmax()]
-
   model = ResNet(layers, input_shape, scope)
   return model

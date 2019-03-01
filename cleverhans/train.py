@@ -36,11 +36,12 @@ _logger.setLevel(logging.INFO)
 
 
 def train(sess, loss, x_train, y_train,
-          init_all=False, evaluate=None, feed=None, args=None,
+          init_all=False, evaluate=None, evaluate_epoch=None,
+          feed=None, args=None,
           rng=None, var_list=None, fprop_args=None, optimizer=None,
           devices=None, x_batch_preprocessor=None, use_ema=False,
           ema_decay=.998, run_canary=None,
-          loss_threshold=1e5, dataset_train=None, dataset_size=None):
+          loss_threshold=np.inf, dataset_train=None, dataset_size=None):
   """
   Run (optionally multi-replica, synchronous) training to minimize `loss`
   :param sess: TF session to use when training the graph
@@ -52,6 +53,7 @@ def train(sess, loss, x_train, y_train,
                    uninitialized variables are initialized before training.
   :param evaluate: function that is run after each training iteration
                    (typically to display the test/validation accuracy).
+  :param evaluate_epoch: Integer specifying after how many epochs to run the evaluation
   :param feed: An optional dictionary that is appended to the feeding
                dictionary before the session runs. Can be used to feed
                the learning phase of a Keras model for instance.
@@ -149,16 +151,18 @@ def train(sess, loss, x_train, y_train,
 
       loss_value = loss.fprop(x, y, **fprop_args)
 
-      grads.append(optimizer.compute_gradients(
-          loss_value, var_list=var_list))
+      # grads.append(optimizer.compute_gradients(
+      #     loss_value, var_list=var_list))
   num_devices = len(devices)
   print("num_devices: ", num_devices)
 
   grad = avg_grads(grads)
   # Trigger update operations within the default graph (such as batch_norm).
   with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-    train_step = optimizer.apply_gradients(grad)
-
+    # train_step = optimizer.apply_gradients(grad)
+    train_step = optimizer.minimize(loss_value)
+    
+    
   epoch_tf = tf.placeholder(tf.int32, [])
   batch_tf = tf.placeholder(tf.int32, [])
 
@@ -243,9 +247,12 @@ def train(sess, loss, x_train, y_train,
       if feed is not None:
         feed_dict.update(feed)
 
+      start = time.time()
       _, loss_numpy = sess.run(
           [train_step, loss_value], feed_dict=feed_dict)
-
+      end = time.time()
+      print("Step time:", end-start)
+      # print("Loss of step", loss_numpy)
       if np.abs(loss_numpy) > loss_threshold:
         raise ValueError("Extreme loss during training: ", loss_numpy)
       if np.isnan(loss_numpy) or np.isinf(loss_numpy):
@@ -255,13 +262,16 @@ def train(sess, loss, x_train, y_train,
     cur = time.time()
     _logger.info("Epoch " + str(epoch) + " took " +
                  str(cur - prev) + " seconds")
+    print("Epoch: ", epoch)
     if evaluate is not None:
       if use_ema:
         # Before running evaluation, load the running average
         # parameters into the live slot, so we can see how well
         # the EMA parameters are performing
         sess.run(swap)
-      evaluate()
+      if(epoch % evaluate_epoch == 0):
+        print("Loss: ", loss_numpy)
+        evaluate()
       if use_ema:
         # Swap the parameters back, so that we continue training
         # on the live parameters

@@ -220,6 +220,18 @@ class FeaturePairing(Loss):
     return loss + self.weight * pairing_loss
 
 
+class MyWeightDecay(Loss):
+  """Weight decay"""
+  def fprop(self, x, y, **kwargs):
+    terms = []
+    for var in self.model.get_params():
+      if var.op.name.find('DW') > 0:
+        terms.append(tf.nn.l2_loss(var))
+    out = tf.add_n(terms)
+    print(terms)
+    assert len(out.get_shape()) == 0
+    return out
+
 class WeightDecay(Loss):
   """Weight decay"""
   def fprop(self, x, y, **kwargs):
