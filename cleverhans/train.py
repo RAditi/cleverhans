@@ -253,7 +253,6 @@ def train(sess, loss, x_train, y_train,
       _, loss_numpy = sess.run(
           [train_step, loss_value], feed_dict=feed_dict)
       end = time.time()
-      print("Step time:", end-start)
       # print("Loss of step", loss_numpy)
       if np.abs(loss_numpy) > loss_threshold:
         raise ValueError("Extreme loss during training: ", loss_numpy)
