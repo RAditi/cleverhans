@@ -11,14 +11,14 @@ import os
 import numpy as np
 import tensorflow as tf
 
-from cleverhans.attacks import FastGradientMethod, ProjectedGradientDescent
+from cleverhans.attacks import FastGradientMethod, ProjectedGradientDescent, RandomPerturb
 from cleverhans.augmentation import random_horizontal_flip, random_shift
 from cleverhans.compat import flags
 from cleverhans.loss import CrossEntropy, WeightedSum, WeightDecay
 from cleverhans.train import train
 from cleverhans.utils import AccuracyReport, set_log_level
 from cleverhans.utils_tf import model_eval
-from cleverhans_tutorials.tutorial_models import ModelBasicCNN
+from cleverhans_tutorials.tutorial_models import ModelBasicCNN, ModelBasicMLP
 from cleverhans.model_zoo.madry_lab_challenges.cifar10_model import make_wresnet
 from cleverhans.model_zoo.all_convolutional import ModelAllConvolutional
 from cleverhans.dataset import CIFAR10, MNIST
@@ -44,9 +44,12 @@ ADV_WEIGHT = 0
 MOMENTUM = 0.9
 WEIGHT_DECAY_WEIGHT = 0.0002
 LR_DECAY = 0.9
+NB_LAYERS = 2
+NB_HIDDEN = 1000
 
 def adv_train(dataset='MNIST',
-	      model_name='basicCNN', 
+	      model_name='basicCNN',
+	      attack='pgd',  
 	      nb_epochs=NB_EPOCHS, 
 	      batch_size=BATCH_SIZE,
 	      learning_rate=LEARNING_RATE,
@@ -116,7 +119,7 @@ def adv_train(dataset='MNIST',
         'learning_rate': FLAGS.learning_rate
     }
     eval_params = {'batch_size': batch_size}
-    pgd_params = {
+    attack_params = {
         'eps': FLAGS.eps,
         'eps_iter': FLAGS.eps_iter,
         'nb_iter': FLAGS.nb_gd_iter,  
@@ -139,27 +142,49 @@ def adv_train(dataset='MNIST',
         return acc, loss
 
     if model_name=='basicCNN':
-  	model = ModelBasicCNN('model', nb_classes, nb_filters)
+  		model = ModelBasicCNN('model', nb_classes, nb_filters)
     elif model_name == 'wresnet':
-	model = make_wresnet(nb_classes, input_shape=(None, img_rows, img_cols, nb_channels), scope=None)
+		model = make_wresnet(nb_classes, input_shape=(None, img_rows, img_cols, nb_channels), scope=None)
     elif model_name== 'allConv':
-  	model = modelAllConvolutional(scope, nb_classes, nb_filters, input_shape=(None, img_rows, img_cols, nb_channels))
+  		model = modelAllConvolutional(scope, nb_classes, nb_filters, input_shape=(None, img_rows, img_cols, nb_channels))
     else: 
-  	logging.info("Model not implemented")
+  		logging.info("Model not implemented")
 
     # Generated the adversarial logits 
-    pgd = ProjectedGradientDescent(model, sess=sess)
-    pgd_x = pgd.generate(x, **pgd_params)
-    pgd_preds = model.get_logits(pgd_x)
+    if(attack=='pgd'):
+    	pgd = ProjectedGradientDescent(model, sess=sess)
+    	pgd_x = pgd.generate(x, **attack_params)
+    	preds_adv = model.get_logits(pgd_x)
 
-    def attack(x):
-        return pgd.generate(x, **pgd_params)
+    	def attack(x):
+        	return pgd.generate(x, **attack_params)
+
+    elif(attack=='fgsm'):
+		fgsm = FastGradientMethod(model, sess=sess)
+    	adv_x = fgsm.generate(x, **attack_params)
+    	preds_adv = model.get_logits(adv_x)
+
+		def attack(x):
+        	return fgsm.generate(x, **attack_params)
+        
+    elif(attack=='random'):
+		random = RandomPerturb(model, sess=sess)
+		adv_x = random.generate(x, **attack_params)
+		preds_adv = model.get_logits(adv_x)
+
+		def attack(x):
+        	return random.generate(x, **attack_params)
+    else: 
+    	print("Invalid attack type")
+    	exit()
 
     clean_loss = CrossEntropy(model, smoothing=label_smoothing)
     adv_loss = CrossEntropy(model, smoothing=label_smoothing, attack=attack)
     weight_decay_loss = WeightDecay(model)
 
-    final_loss = WeightedSum(model, ([FLAGS.clean_weight, clean_loss], [FLAGS.weight_decay_weight, weight_decay_loss]))
+    final_loss = WeightedSum(model, ([FLAGS.clean_weight, clean_loss], 
+    	[FLAGS.weight_decay_weight, weight_decay_loss], 
+    	[FLAGS.adv_weight, adv_loss]))
 
     preds = model.get_logits(x)
     adv_x = attack(x)
@@ -291,5 +316,6 @@ if __name__ == '__main__':
     flags.DEFINE_string('model_name', 'basicCNN', 'Which model')
     flags.DEFINE_bool('data_augmentation', False,
                       'whether to use data augmentation')
+    flags.DEFINE_attack('attack', 'pgd', 'which attack to use: one of {pgd, fgsm, radnom})
 
     tf.app.run()
