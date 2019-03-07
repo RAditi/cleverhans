@@ -150,6 +150,31 @@ class CIFAR10(Dataset):
     return (self.in_memory_dataset(self.x_train, self.y_train, shuffle),
             self.in_memory_dataset(self.x_test, self.y_test, repeat=False))
 
+class TwoCircles(Dataset):
+  """ Toy dataset with two circles"""
+
+  NB_CLASSES = 10
+
+  def __init__(self, radius, noise, nb_train_points):
+    kwargs = locals()
+    if '__class__' in kwargs:
+      del kwargs['__class__']
+    super(TWOCIRCLES, self).__init__(kwargs)
+    x_train, y_train, x_test, y_test = data_two_circles(radius=radius, 
+                                                        noise=noise, 
+                                                        nb_points=1024, 
+                                                        nb_classes=2)
+    self.x_train = x_train.astype('float32')
+    self.y_train = y_train.astype('float32')
+    self.x_test = x_test.astype('float32')
+    self.y_test = y_test.astype('float32')
+
+  def to_tensorflow(self, shuffle=4096):
+    return (self.in_memory_dataset(self.x_train, self.y_train, shuffle),
+            self.in_memory_dataset(self.x_test, self.y_test, repeat=False))
+
+
+
 
 class Factory(object):
   """
@@ -305,3 +330,48 @@ def data_cifar10(train_start=0, train_end=50000, test_start=0, test_end=10000):
   y_test = y_test[test_start:test_end, :]
 
   return x_train, y_train, x_test, y_test
+
+
+  def data_two_circles(radius, noise, nb_points=1024, nb_classes=2):
+    """
+    Create new dataset with two circles 
+    """
+    # Train data
+    radius_neg = radius
+    x_train = np.zeros((2*nb_points, 2))
+    y_train = np.zeros((2*nb_points, 1))
+
+    angle = np.pi*np.random.uniform(0, 2, nb_points)
+    x_train[0:nb_points, 0] = radius_pos*np.cos(angle) + np.random.normal(0, noise, nb_points)
+    x_train[0:nb_points, 1] = radius_pos*np.sin(angle) + np.random.normal(0, noise, nb_points)
+    y_train[0:nb_points] = 1
+
+    angle = np.pi*np.random.uniform(0, 2, nb_points)
+    x_train[nb_points:2*nb_points, 0] = radius_neg*np.cos(angle) + np.random.normal(0, noise, nb_points)
+    x_train[nb_points:2*nb_points, 1] = radius_neg*np.sin(angle) + np.random.normal(0, noise, nb_points)
+    y_train[nb_points:2*nb_points] = -1
+  
+    random_perm = np.random.permutation(np.range(nb_points))
+    x_train = x_train[random_perm, :]
+    y_train = y_train[random_perm, :]
+
+    nb_test_points = 5000
+    x_test = np.zeros((2*nb_test_points, 2))
+    y_test = np.zeros((2*nb_test_points, 1))
+
+    angle = np.pi*np.random.uniform(0, 2, nb_test_points)
+    x_test[0:nb_test_points, 0] = radius_pos*np.cos(angle) + np.random.normal(0, noise, nb_test_points)
+    x_test[0:nb_test_points, 1] = radius_pos*np.sin(angle) + np.random.normal(0, noise, nb_test_points)
+    y_test[0:nb_test_points] = 1
+
+    angle = np.pi*np.random.uniform(0, 2, nb_test_points)
+    x_test[nb_test_points:2*nb_test_points, 0] = radius_neg*np.cos(angle) + np.random.normal(0, noise, nb_test_points)
+    x_test[nb_test_points:2*nb_test_points, 1] = radius_neg*np.sin(angle) + np.random.normal(0, noise, nb_test_points)
+    y_test[nb_test_points:2*nb_test_points] = -1
+  
+    random_perm = np.random.permutation(np.range(nb_test_points))
+    x_test = x_test[random_perm, :]
+    y_test = y_test[random_perm, :]
+
+  return x_train, y_train, x_test, y_test
+
