@@ -264,14 +264,14 @@ def train(sess, loss, x_train, y_train,
     _logger.info("Epoch " + str(epoch) + " took " +
                  str(cur - prev) + " seconds")
     print("Epoch: ", epoch)
+    print("Loss: ", loss_numpy)
     if evaluate is not None:
       if use_ema:
         # Before running evaluation, load the running average
         # parameters into the live slot, so we can see how well
         # the EMA parameters are performing
         sess.run(swap)
-      if(epoch % evaluate_epoch == 0):
-        print("Loss: ", loss_numpy)
+      if(epoch % evaluate_epoch == 0 and epoch > 0):
         evaluate()
       if use_ema:
         # Swap the parameters back, so that we continue training

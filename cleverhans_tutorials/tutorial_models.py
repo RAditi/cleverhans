@@ -25,8 +25,7 @@ class ModelBasicCNN(Model):
     self.input_shape = input_shape 
     # Do a dummy run of fprop to make sure the variables are created from
     # the start
-    fprop_input_shape = input_shape 
-    fprop_input_shape[0] = 128
+    fprop_input_shape= (128, input_shape[1], input_shape[2], input_shape[3])
     self.fprop(tf.placeholder(tf.float32, fprop_input_shape))
     # Put a reference to the params in self so that the params get pickled
     self.params = self.get_params()
@@ -56,8 +55,7 @@ class ModelBasicMLP(Model):
     self.input_shape = input_shape
     # Do a dummy run of fprop to make sure the variables are created from
     # the start
-    fprop_input_shape = self.input_shape
-    fprop_input_shape[0] = 128
+    fprop_input_shape= (128, input_shape[1], input_shape[2], input_shape[3])
     self.fprop(tf.placeholder(tf.float32, fprop_input_shape))
     # Put a reference to the params in self so that the params get pickled
     self.params = self.get_params()

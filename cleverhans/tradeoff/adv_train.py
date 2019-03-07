@@ -142,7 +142,7 @@ def adv_train(dataset='MNIST',
         return acc, loss
 
     if model_name=='basicCNN':
-  		model = ModelBasicCNN('model', nb_classes, nb_filters)
+  		model = ModelBasicCNN('model', nb_classes, nb_filters, input_shape=(None, img_rows, img_cols, nb_channels))
     elif model_name == 'wresnet':
 		model = make_wresnet(nb_classes, input_shape=(None, img_rows, img_cols, nb_channels), scope=None)
     elif model_name== 'allConv':
@@ -157,23 +157,23 @@ def adv_train(dataset='MNIST',
     	preds_adv = model.get_logits(pgd_x)
 
     	def attack(x):
-        	return pgd.generate(x, **attack_params)
+            return pgd.generate(x, **attack_params)
 
     elif(attack=='fgsm'):
-		fgsm = FastGradientMethod(model, sess=sess)
+        fgsm = FastGradientMethod(model, sess=sess)
     	adv_x = fgsm.generate(x, **attack_params)
     	preds_adv = model.get_logits(adv_x)
 
-		def attack(x):
-        	return fgsm.generate(x, **attack_params)
+	def attack(x):
+            return fgsm.generate(x, **attack_params)
         
     elif(attack=='random'):
-		random = RandomPerturb(model, sess=sess)
-		adv_x = random.generate(x, **attack_params)
-		preds_adv = model.get_logits(adv_x)
-
-		def attack(x):
-        	return random.generate(x, **attack_params)
+	random = RandomPerturb(model, sess=sess)
+	adv_x = random.generate(x, **attack_params)
+	preds_adv = model.get_logits(adv_x)
+        
+	def attack(x):
+            return random.generate(x, **attack_params)
     else: 
     	print("Invalid attack type")
     	exit()
@@ -268,7 +268,8 @@ def main(argv=None):
     from cleverhans_tutorials import check_installation
     check_installation(__file__)
     adv_train(dataset=FLAGS.dataset, 
-	      model_name=FLAGS.model_name, 
+	      model_name=FLAGS.model_name,
+              attack=FLAGS.attack, 
 	      nb_epochs=FLAGS.nb_epochs, 
 	      batch_size=FLAGS.batch_size,
 	      learning_rate=FLAGS.learning_rate,
@@ -316,6 +317,6 @@ if __name__ == '__main__':
     flags.DEFINE_string('model_name', 'basicCNN', 'Which model')
     flags.DEFINE_bool('data_augmentation', False,
                       'whether to use data augmentation')
-    flags.DEFINE_attack('attack', 'pgd', 'which attack to use: one of {pgd, fgsm, radnom})
+    flags.DEFINE_string('attack', 'pgd', 'which attack to use: one of {pgd, fgsm, random}')
 
     tf.app.run()
